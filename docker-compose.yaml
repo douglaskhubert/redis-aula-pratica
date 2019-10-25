@@ -1,0 +1,110 @@
+version: "3.0"
+services:
+  sentinel5000:
+    image: redis:latest
+    volumes:
+      - "./cluster-test/sentinel5000/sentinel.conf:/data/sentinel.conf"
+    command: "redis-sentinel ./sentinel.conf"
+    networks:
+      redisnet:
+        ipv4_address: 10.0.0.11
+
+  sentinel5001:
+    image: redis:latest
+    volumes:
+      - "./cluster-test/sentinel5001/sentinel.conf:/data/sentinel.conf"
+    command: "redis-sentinel ./sentinel.conf"
+    networks:
+      redisnet:
+        ipv4_address: 10.0.0.12
+
+  sentinel5002:
+    image: redis:latest
+    volumes:
+      - "./cluster-test/sentinel5002/sentinel.conf:/data/sentinel.conf"
+    command: "redis-sentinel ./sentinel.conf"
+    networks:
+      redisnet:
+        ipv4_address: 10.0.0.13
+
+  redis7000:
+    build: .
+    volumes:
+      - "./cluster-test/7000/redis.conf:/usr/local/etc/redis/redis.conf"
+      - "./create-cluster:/usr/local/bin/create-cluster"
+    networks:
+      redisnet:
+        ipv4_address: 10.0.0.2
+
+  redis7001:
+    build: .
+    volumes:
+      - "./cluster-test/7001/redis.conf:/usr/local/etc/redis/redis.conf"
+      - "./cluster-test/7001/sentinel.conf:/data/sentinel.conf"
+    networks:
+      redisnet:
+        ipv4_address: 10.0.0.3
+
+  redis7002:
+    build: .
+    volumes:
+      - "./cluster-test/7002/redis.conf:/usr/local/etc/redis/redis.conf"
+      - "./cluster-test/7002/sentinel.conf:/data/sentinel.conf"
+    networks:
+      redisnet:
+        ipv4_address: 10.0.0.4
+
+  redis7003:
+    build: .
+    volumes:
+      - "./cluster-test/7003/redis.conf:/usr/local/etc/redis/redis.conf"
+    networks:
+      redisnet:
+        ipv4_address: 10.0.0.5
+
+  redis7004:
+    build: .
+    volumes:
+      - "./cluster-test/7004/redis.conf:/usr/local/etc/redis/redis.conf"
+    networks:
+      redisnet:
+        ipv4_address: 10.0.0.6
+
+  redis7005:
+    build: .
+    volumes:
+      - "./cluster-test/7005/redis.conf:/usr/local/etc/redis/redis.conf"
+    networks:
+      redisnet:
+        ipv4_address: 10.0.0.7
+
+  redis7006:
+    build: .
+    volumes:
+      - "./cluster-test/7006/redis.conf:/usr/local/etc/redis/redis.conf"
+    networks:
+      redisnet:
+        ipv4_address: 10.0.0.8
+
+  redis7007:
+    build: .
+    volumes:
+      - "./cluster-test/7007/redis.conf:/usr/local/etc/redis/redis.conf"
+    networks:
+      redisnet:
+        ipv4_address: 10.0.0.9
+
+  redis7008:
+    build: .
+    volumes:
+      - "./cluster-test/7008/redis.conf:/usr/local/etc/redis/redis.conf"
+    networks:
+      redisnet:
+        ipv4_address: 10.0.0.10
+
+networks:
+  redisnet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.0.0.0/16

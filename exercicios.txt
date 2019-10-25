@@ -1,0 +1,262 @@
+1- O que são slots no Redis e para que servem? Existe alocação usando hash no Redis?
+Crie uma explicação integrando as duas perguntas. Mostre um exemplo dos slots atribuídos ao nó 7000 (Veja Passo 3.1!)
+
+Slots são os espaços em que o Redis armazena as chaves. Cada nó do cluster fica responsável de armazenar um range de slots.
+Quando uma nova chave é inserido, o Redis calcula uma hash em cima do valor da chave para definir em qual nó a chave será
+armazenada.
+No meu cluster, o nó 7000 ficou responsável pelos slots de 0-5460
+
+
+
+---
+2- Crie mais três nós no cluster  - de 7006 a 7008 (total de 9 nós). Crie uma arquitetura de 3 conjuntos de réplicas 
+(sharding), com duas réplicas para cada coordenador (três cópias para cada fragmento de dados).
+
+Primeiro adicionei mais 3 serviços no meu arquivo de docker-compose, cada serviço também criei um volume para montar
+o arquivo de configuração dentro do container:
+
+# docker-compose.yaml
+version: "3.5"
+  redis7006:
+    build: . # imagem criada a partir de Dockefile
+    volumes:
+      - "./cluster-test/7006/redis.conf:/usr/local/etc/redis/redis.conf"
+    networks:
+      redisnet:
+        ipv4_address: 10.0.0.8
+
+  redis7007:
+    build: . # imagem criada a partir de Dockefile
+    volumes:
+      - "./cluster-test/7007/redis.conf:/usr/local/etc/redis/redis.conf"
+    networks:
+      redisnet:
+        ipv4_address: 10.0.0.9
+
+  redis7008:
+    build: . # imagem criada a partir de Dockefile
+    volumes:
+      - "./cluster-test/7008/redis.conf:/usr/local/etc/redis/redis.conf"
+    networks:
+      redisnet:
+        ipv4_address: 10.0.0.10
+
+Os arquivos de configuração criados estão dessa forma:
+
+Para o novo nó 7006:
+# ./7006/redis.conf
+port 7006
+cluster-enabled yes
+cluster-config-file nodes.conf
+cluster-node-timeout 5000
+appendonly yes
+
+Para o novo nó 7007:
+# ./7007/redis.conf
+port 7007
+cluster-enabled yes
+cluster-config-file nodes.conf
+cluster-node-timeout 5000
+appendonly yes
+
+Para o novo nó 7008:
+# ./7008/redis.conf
+port 7008
+cluster-enabled yes
+cluster-config-file nodes.conf
+cluster-node-timeout 5000
+appendonly yes
+
+Criei o cluster com o comando:
+
+redis-cli -p 7000 --cluster create 10.0.0.2:7000 10.0.0.3:7001 10.0.0.4:7002 10.0.0.5:7003 10.0.0.6:7004 10.0.0.7:7005 10.0.0.8:7006 10.0.0.9:7007 10.0.0.10:7008 --cluster-replicas 2
+
+Output:
+M: 694d3ffe5b95647a7f99bca278f2613cc30b9dd6 10.0.0.2:7000
+   slots:[0-5460] (5461 slots) master
+   2 additional replica(s)
+S: a43a057c2baaae80f7aae39f03b596fa5a236e57 10.0.0.8:7006
+   slots: (0 slots) slave
+   replicates 56abf24da893acb16f1d02e8ed517d5a295b1b45
+S: 934b66ca1dfb0986414bc7e1d786c443aa999079 10.0.0.7:7005
+   slots: (0 slots) slave
+   replicates 56abf24da893acb16f1d02e8ed517d5a295b1b45
+S: ea3a5eb5aec33662db008fe0942da271aaafb8d0 10.0.0.9:7007
+   slots: (0 slots) slave
+   replicates d1c06c05beca1720adaf88671e4be2f81f259deb
+M: 56abf24da893acb16f1d02e8ed517d5a295b1b45 10.0.0.3:7001
+   slots:[5461-10922] (5462 slots) master
+   2 additional replica(s)
+S: 3101c2c2691c0eee94ff083464786812f7da156a 10.0.0.5:7003
+   slots: (0 slots) slave
+   replicates 694d3ffe5b95647a7f99bca278f2613cc30b9dd6
+M: d1c06c05beca1720adaf88671e4be2f81f259deb 10.0.0.4:7002
+   slots:[10923-16383] (5461 slots) master
+   2 additional replica(s)
+S: 19ca4fd6085befc63f46aa7462eb0e3d2263c1fd 10.0.0.10:7008
+   slots: (0 slots) slave
+   replicates d1c06c05beca1720adaf88671e4be2f81f259deb
+S: 6cc790d2acb739463a116607d1ac7bf0f6cb0d88 10.0.0.6:7004
+   slots: (0 slots) slave
+   replicates 694d3ffe5b95647a7f99bca278f2613cc30b9dd6
+
+
+---
+3- Crie mais 5 chaves e seus valores, fazendo sharding. Neste exercício, insira na resposta uma imagem em que seja possível ilustrar os dados já alocados em diferentes nós!
+
+Inserindo as chaves:
+
+127.0.0.1:7000> set chave1 valor1
+-> Redirected to slot [7530] located at 10.0.0.3:7001
+OK
+10.0.0.3:7001> set chave2 valor2
+-> Redirected to slot [11529] located at 10.0.0.4:7002
+OK
+10.0.0.4:7002> set chave3 valor3
+OK
+10.0.0.4:7002> set chave4 valor4
+-> Redirected to slot [3535] located at 10.0.0.2:7000
+OK
+10.0.0.2:7000> set chave5 valor5
+-> Redirected to slot [7662] located at 10.0.0.3:7001
+OK
+
+
+Verificando em quais nós as chaves se encontram:
+
+root@c21526a51965:/data# redis-cli --cluster call 127.0.0.1:7000 KEYS "*"
+>>> Calling KEYS *
+
+127.0.0.1:7000: 1) "chave4"
+10.0.0.8:7006: 1) "chave1"
+               2) "chave5"
+10.0.0.7:7005: 1) "chave5"
+               2) "chave1"
+10.0.0.9:7007: 1) "chave2"
+               2) "chave3"
+10.0.0.3:7001: 1) "chave5"
+               2) "chave1"
+10.0.0.5:7003: 1) "chave4"
+10.0.0.4:7002: 1) "chave3"
+               2) "chave2"
+10.0.0.10:7008: 1) "chave3"
+                2) "chave2"
+10.0.0.6:7004: 1) "chave4"
+
+
+
+---
+4- Verifique os nós do cluster e o estado de cada um (connected, disconnected ou …). Descreva qual nó é subordinado de qual nó coordenador. Como fez para obter a configuração?
+
+127.0.0.1:7000> CLUSTER NODES
+a43a057c2baaae80f7aae39f03b596fa5a236e57 10.0.0.8:7006@17006 slave 56abf24da893acb16f1d02e8ed517d5a295b1b45 0 1571940102062 7 connected
+934b66ca1dfb0986414bc7e1d786c443aa999079 10.0.0.7:7005@17005 slave 56abf24da893acb16f1d02e8ed517d5a295b1b45 0 1571940100554 6 connected
+694d3ffe5b95647a7f99bca278f2613cc30b9dd6 10.0.0.2:7000@17000 myself,master - 0 1571940100000 1 connected 0-5460
+ea3a5eb5aec33662db008fe0942da271aaafb8d0 10.0.0.9:7007@17007 slave d1c06c05beca1720adaf88671e4be2f81f259deb 0 1571940101056 8 connected
+56abf24da893acb16f1d02e8ed517d5a295b1b45 10.0.0.3:7001@17001 master - 0 1571940100051 2 connected 5461-10922
+3101c2c2691c0eee94ff083464786812f7da156a 10.0.0.5:7003@17003 slave 694d3ffe5b95647a7f99bca278f2613cc30b9dd6 0 1571940101000 4 connected
+d1c06c05beca1720adaf88671e4be2f81f259deb 10.0.0.4:7002@17002 master - 0 1571940101000 3 connected 10923-16383
+19ca4fd6085befc63f46aa7462eb0e3d2263c1fd 10.0.0.10:7008@17008 slave d1c06c05beca1720adaf88671e4be2f81f259deb 0 1571940102061 9 connected
+6cc790d2acb739463a116607d1ac7bf0f6cb0d88 10.0.0.6:7004@17004 slave 694d3ffe5b95647a7f99bca278f2613cc30b9dd6 0 1571940100051 5 connected
+
+@ Os nós 7003 e 7004 são subordinados do nó 7000.
+@ Os nós 7005 e 7006 são subordinados do nó 7001.
+@ Os nós 7007 e 7008 são subordinados do nó 7002.
+
+
+
+---
+5- Forçar failover do 7002 (com erro!!! Por exemplo, "Error: Server closed the connection"). Verifique a realocação automática. Explique o quê aconteceu?
+
+Considerando a saída do comando para verificar os nós em que as chaves estão armazenadas (resposta do exercício 3)
+Podemos ver que a chave "chave2" se encontra no nó 7002, matando o nó 7002 com o comando:
+
+docker-compose stop redis7002
+
+Ao tentar realizar uma consulta na chave2 recebemos um redirecionamento para o nó 7008:
+
+127.0.0.1:7000> get chave2
+-> Redirected to slot [11529] located at 10.0.0.10:7008
+"valor2"
+
+Analisando os logs dos nós podemos ver o momento em que o quorum é realizado e o momento em que o novo master 7008 é elegido.
+
+aula-redis_redis7002_1 exited with code 0
+redis7007_1  | 1:S 24 Oct 2019 18:26:15.611 * Connecting to MASTER 10.0.0.4:7002
+redis7007_1  | 1:S 24 Oct 2019 18:26:15.611 * MASTER <-> REPLICA sync started
+redis7004_1  | 1:S 24 Oct 2019 18:26:20.530 * Marking node d1c06c05beca1720adaf88671e4be2f81f259deb as failing (quorum reached).
+redis7004_1  | 1:S 24 Oct 2019 18:26:20.530 # Cluster state changed: fail
+redis7008_1  | 1:S 24 Oct 2019 18:26:20.602 * Marking node d1c06c05beca1720adaf88671e4be2f81f259deb as failing (quorum reached).
+redis7008_1  | 1:S 24 Oct 2019 18:26:20.602 # Cluster state changed: fail
+redis7008_1  | 1:S 24 Oct 2019 18:26:20.620 # Start of election delayed for 576 milliseconds (rank #0, offset 4983).
+redis7000_1  | 1:M 24 Oct 2019 18:26:21.001 * Marking node d1c06c05beca1720adaf88671e4be2f81f259deb as failing (quorum reached).
+redis7000_1  | 1:M 24 Oct 2019 18:26:21.001 # Cluster state changed: fail
+redis7007_1  | 1:S 24 Oct 2019 18:26:21.004 * FAIL message received from 694d3ffe5b95647a7f99bca278f2613cc30b9dd6 about d1c06c05beca1720adaf88671e4be2f81f259deb
+redis7007_1  | 1:S 24 Oct 2019 18:26:21.004 # Cluster state changed: fail
+redis7006_1  | 1:S 24 Oct 2019 18:26:21.004 * FAIL message received from 694d3ffe5b95647a7f99bca278f2613cc30b9dd6 about d1c06c05beca1720adaf88671e4be2f81f259deb
+redis7006_1  | 1:S 24 Oct 2019 18:26:21.004 # Cluster state changed: fail
+redis7003_1  | 1:S 24 Oct 2019 18:26:21.008 * FAIL message received from 694d3ffe5b95647a7f99bca278f2613cc30b9dd6 about d1c06c05beca1720adaf88671e4be2f81f259deb
+redis7003_1  | 1:S 24 Oct 2019 18:26:21.008 # Cluster state changed: fail
+redis7005_1  | 1:S 24 Oct 2019 18:26:21.008 * FAIL message received from 694d3ffe5b95647a7f99bca278f2613cc30b9dd6 about d1c06c05beca1720adaf88671e4be2f81f259deb
+redis7005_1  | 1:S 24 Oct 2019 18:26:21.009 # Cluster state changed: fail
+redis7001_1  | 1:M 24 Oct 2019 18:26:21.004 * Marking node d1c06c05beca1720adaf88671e4be2f81f259deb as failing (quorum reached).
+redis7001_1  | 1:M 24 Oct 2019 18:26:21.004 # Cluster state changed: fail
+redis7007_1  | 1:S 24 Oct 2019 18:26:21.039 # Start of election delayed for 543 milliseconds (rank #0, offset 4983).
+redis7008_1  | 1:S 24 Oct 2019 18:26:21.224 # Starting a failover election for epoch 10.
+redis7001_1  | 1:M 24 Oct 2019 18:26:21.240 # Failover auth granted to 19ca4fd6085befc63f46aa7462eb0e3d2263c1fd for epoch 10
+redis7000_1  | 1:M 24 Oct 2019 18:26:21.240 # Failover auth granted to 19ca4fd6085befc63f46aa7462eb0e3d2263c1fd for epoch 10
+redis7008_1  | 1:S 24 Oct 2019 18:26:21.251 # Failover election won: I'm the new master.
+
+
+---
+6- Assumindo que existe uma instância coordenadora na porta 6379 (porta padrão), e uma subordinada em 6380.
+Crie o arquivo sentinel.conf nas portas 5000, 5001, 5002, com a seguinte configuração:
+port 500?
+sentinel monitor mymaster 127.0.0.1 6379 2
+sentinel down-after-milliseconds mymaster 5000
+sentinel failover-timeout mymaster 60000
+sentinel parallel-syncs mymaster 1
+
+Explique o que é um sentinel e o que significa esta configuração (de preferência faz uma explicação passo a passo acompanhando cada linha inserida no arquivo).
+
+Sentinel é um sistema designado para ajudar no gerenciamento de instâncias Redis. Possui 3 finalidades: monitorar se a instância
+está funcionando bem; notificar via API se alguma instância Redis está com comportamento indevido; e automatizar o processo
+de failover.
+
+A primeira linha informa em qual porta o processo do sentinel vai rodar.
+A segunda linha informa o sentinel para monitorar a instância mymaster que está localizada no endereço 127.0.0.1 na porta 6379 e que é necessário 2 sentinels chegarem
+em um acordo antes de iniciar algum processo de failover.
+A terceira linha informa o tempo que a instância mymaster precisa ficar incomunicável para o Sentinel achar que a instância falhou.
+A quarta linha configura um timeout de failover, em outras palavras, é o tempo que o sentinel espera até tentar iniciar um failover para uma instância cuja qual outro sentinela
+já iniciou o processo de failover.
+A quinta linha define o número de instâncias subordinadas que podem ser reconfiguradas ao mesmo tempo para usar o novo coordenador depois de um failover.
+
+
+
+---
+7- Execute Sentinel para cada porta, usando o código seguinte:
+
+$ redis-sentinel ./500?/sentinel.conf
+
+E gere failover:
+
+$redis-cli -p 6379 DEBUG sleep 300
+
+Teste:
+127.0.0.1:5000> $ SENTINEL get-master-addr-by-name mymaster
+1) "127.0.0.1"
+2) "6380"
+
+Explique a diferença entre o exercício 5 e 7 em termos de ações pós failover.
+
+A diferença é que o sentinel reescreve seus arquivos de configuração, se adaptando as mudanças causadas por falhas e failovers,
+escrevendo em arquivos, também podemos salvar esses arquivos para preservar o estado do sentinel, para caso de seu
+próprio nó falhar.
+
+
+---
+8- Tem implementação nativa de quorum no Redis?
+
+Sim. Pode ser definida no arquivo de configuração do sentinel. O quorum no sentinel é usado apenas
+para os sentinel's concordarem que um determinado nó falhou, um sentinel só inicia um processo de
+failover se o quorum foi atingido.
